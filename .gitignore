@@ -1,10 +1,28 @@
+# data / spreadsheets
 *.csv
 *.xlsm
 *.xlsx
-*.mp4
+
+# generated toolkit artifacts
 *.pseries
 *.mfunc
 *.cfunc
 *.oscillator
+
+# rendered media
+*.mp4
+
+# installers (distributed via GitHub Releases, not tracked in the repo)
+*.command
+*.bat
+
+# app runtime state
+chronopolis_prefs.json
+
+# python caches
+__pycache__/
+*.pyc
+
+# environments / editor
 /.claude/
 /.venv/

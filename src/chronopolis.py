@@ -35,12 +35,17 @@ DEFAULT_MEDIA = str(Path.cwd() / "media")
 
 
 def _load_version():
-    """App version, read from the plain-text VERSION file (single source of
-    truth). Falls back to a constant if the file is missing (e.g. a bundle)."""
-    try:
-        return Path(__file__).with_name("VERSION").read_text().strip()
-    except OSError:
-        return "1.0.0"
+    """App version from the plain-text VERSION file (single source of truth).
+    VERSION lives in the repo root while this code lives in root/src, so check
+    both the script's own folder and its parent. Falls back to a constant if the
+    file is missing (e.g. a bundle)."""
+    here = Path(__file__).resolve().parent
+    for candidate in (here / "VERSION", here.parent / "VERSION"):
+        try:
+            return candidate.read_text().strip()
+        except OSError:
+            continue
+    return "1.0.0"
 
 
 VERSION = _load_version()

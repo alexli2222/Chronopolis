@@ -1,0 +1,3 @@
+# Chronopolis dependencies (Python 3.11+). Also needs ffmpeg on the system PATH.
+numpy>=2.5.1
+manim>=0.20.1
