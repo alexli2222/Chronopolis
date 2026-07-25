@@ -28,7 +28,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog
 
-import src.core as core
+import core
 
 PREFS_PATH = Path(__file__).with_name("chronopolis_prefs.json")
 DEFAULT_MEDIA = str(Path.cwd() / "media")
