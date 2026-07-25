@@ -12,9 +12,11 @@
 # rendered media
 *.mp4
 
-# installers (distributed via GitHub Releases, not tracked in the repo)
-*.command
-*.bat
+# installers (distributed via GitHub Releases, not tracked in the repo).
+# Only the installers are ignored - run.command / run.bat ARE tracked, so the
+# clone delivers them into the installed folder.
+installer.command
+installer.bat
 
 # app runtime state
 chronopolis_prefs.json
