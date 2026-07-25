@@ -1,0 +1,222 @@
+"""
+Chronopolis core - non-interactive task functions shared by the GUI.
+
+Each function performs exactly one toolkit task from explicit arguments (no
+console prompts), writes any output file(s), and returns a short human-readable
+result string. Bad input raises ValueError/OSError so the caller can surface the
+message. The heavy visual work (Manim) is imported lazily inside the functions
+that need it, so the rest of the toolkit runs without it installed.
+"""
+
+from pathlib import Path
+
+import paths
+import regression
+import transforms
+from cfunc import ComplexFunction
+from mfunc import MathFunction
+from pointseries import PointSeries
+
+
+# ---- shared helpers ----------------------------------------------------
+
+def _resolver(name):
+    """Resolves a [name] reference in an expression to a .mfunc MathFunction."""
+    found = paths.find_existing(name, (".mfunc",))
+    if found is None:
+        raise ValueError(f"referenced function not found: {name} (looked for {name}.mfunc)")
+    return MathFunction.from_file(found)
+
+
+def _out_or_default(out_path, input_path, suffix, fallback):
+    """Chooses the output path: what the user typed, else a default derived from
+    the input file's name (or `fallback` when there is no input file)."""
+    text = (out_path or "").strip()
+    if text:
+        return paths.ensure_suffix(text, suffix)
+    if input_path:
+        return paths.ensure_suffix(Path(input_path).with_suffix(suffix).name, suffix)
+    return paths.ensure_suffix(fallback, suffix)
+
+
+def _sync_function(theta1: MathFunction, theta2: MathFunction) -> MathFunction:
+    """Kuramoto order parameter r(t) of two oscillator phase functions."""
+    t1, t2 = theta1.expression(), theta2.expression()
+    r_expr = f"sqrt((cos(({t1}))+cos(({t2})))^2+(sin(({t1}))+sin(({t2})))^2)/2"
+    return MathFunction([r_expr], name="sync",
+                        time_based=theta1.time_based or theta2.time_based)
+
+
+# ---- individual tasks --------------------------------------------------
+
+def task_pointseries(spreadsheet, out_path):
+    data = PointSeries.from_file(spreadsheet)
+    out = _out_or_default(out_path, spreadsheet, ".pseries", "pointseries.pseries")
+    data.save(out, source=Path(spreadsheet).name)
+    return f"Wrote {out}  ({len(data)} points, time_based={data.time_based})"
+
+
+def task_regression(data_file, harmonics, out_path):
+    data = PointSeries.from_file(data_file)
+    sinusoids = regression.fit(data, harmonics)  # harmonics None -> best guess
+    fn = MathFunction([str(s) for s in sinusoids], name=Path(data_file).stem,
+                      time_based=data.time_based)
+    out = _out_or_default(out_path, data_file, ".mfunc", "regression.mfunc")
+    fn.save(out, header=f"Sinusoidal regression fit of {Path(data_file).name}")
+    return f"Wrote {out}  ({len(sinusoids)} sinusoid term(s))\n  f(x) = {fn.expression()}"
+
+
+def task_transform(mfunc_file, transform_name, out_path):
+    fn = MathFunction.from_file(mfunc_file)
+    transform = transforms.TRANSFORMS.get(transform_name)
+    if transform is None:
+        raise ValueError(f"unknown transform {transform_name!r}; "
+                         f"available: {', '.join(transforms.TRANSFORMS)}")
+    result = transform(fn)
+    stem = f"{Path(mfunc_file).stem}_{transform_name}"
+    out = _out_or_default(out_path, None, ".mfunc", f"{stem}.mfunc")
+    result.save(out, header=f"{transform_name} transform of {Path(mfunc_file).name}")
+    return f"Wrote {out}"
+
+
+def task_create_function(expr, out_path):
+    if not expr.strip():
+        raise ValueError("enter an expression in x, e.g. sin(x)+x")
+    fn = MathFunction.from_combined(expr, _resolver, name="function")
+    out = _out_or_default(out_path, None, ".mfunc", "function.mfunc")
+    fn.save(out, header=f"Created function: {expr}")
+    return f"Wrote {out}\n  f(x) = {fn.expression()}"
+
+
+def task_create_complex(real_expr, imag_expr, out_path):
+    if not real_expr.strip() or not imag_expr.strip():
+        raise ValueError("enter both the real and imaginary parts")
+    real = MathFunction.from_combined(real_expr, _resolver)
+    imag = MathFunction.from_combined(imag_expr, _resolver)
+    cf = ComplexFunction(real, imag, name="complex")
+    out = _out_or_default(out_path, None, ".cfunc", "complex.cfunc")
+    cf.save(out, header="Created complex function")
+    return f"Wrote {out}\n  {cf}"
+
+
+def task_oscillator(cfunc_file, out_path):
+    cf = ComplexFunction.from_file(cfunc_file)
+    osc = MathFunction([cf.phase_expression()], name=Path(cfunc_file).stem,
+                       time_based=cf.time_based)
+    out = _out_or_default(out_path, cfunc_file, ".oscillator", "oscillator.oscillator")
+    osc.save(out, header=f"Oscillator phase theta(t) = atan2(imag, real) of {Path(cfunc_file).name}")
+    return f"Wrote {out}"
+
+
+def task_sync(osc1_file, osc2_file, out_path):
+    theta1 = MathFunction.from_file(osc1_file)
+    theta2 = MathFunction.from_file(osc2_file)
+    result = _sync_function(theta1, theta2)
+    default = f"{Path(osc1_file).stem}_{Path(osc2_file).stem}_sync.mfunc"
+    out = _out_or_default(out_path, None, ".mfunc", default)
+    result.save(out, header="Synchronization r(t) - Kuramoto order parameter of two oscillators")
+    return f"Wrote {out}"
+
+
+# ---- visualization -----------------------------------------------------
+
+def task_visualize_functions(items_text, preview, media_dir):
+    import visualize_functions as vf
+
+    items = []
+    for line in items_text.splitlines():
+        line = line.strip()
+        if line:
+            items.append(vf.load_item(line))
+    if not items:
+        raise ValueError("enter at least one item (a file path or an expression in x)")
+
+    x_min, x_max = vf.suggest_x_bounds(items)
+    y_min, y_max = vf.suggest_y_bounds(items, x_min, x_max)
+    output_name = "_".join(lbl for lbl, _ in items)
+    overrides = {"media_dir": media_dir} if media_dir else {}
+    vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
+              preview=preview, output_name=output_name, **overrides)
+    return f"Rendered {len(items)} item(s). Video under {media_dir or 'media'}/videos/"
+
+
+def task_visualize_complex(cfunc_file, preview, media_dir):
+    import visualize_functions as vf
+
+    cf = ComplexFunction.from_file(cfunc_file)
+    _render_complex(vf, cf.real, cf.imag, subject=Path(cfunc_file).stem,
+                    kind="complex", segment=False, preview=preview, media_dir=media_dir)
+    return f"Rendered complex trajectory. Video under {media_dir or 'media'}/videos/"
+
+
+def task_visualize_oscillator(osc_file, preview, media_dir):
+    import visualize_functions as vf
+
+    theta = MathFunction.from_file(osc_file)
+    th = theta.expression()
+    real_fn = MathFunction.from_expression(f"cos(({th}))", time_based=theta.time_based)
+    imag_fn = MathFunction.from_expression(f"sin(({th}))", time_based=theta.time_based)
+    _render_complex(vf, real_fn, imag_fn, subject=Path(osc_file).stem,
+                    kind="oscillator", segment=True, preview=preview, media_dir=media_dir)
+    return f"Rendered oscillator phasor. Video under {media_dir or 'media'}/videos/"
+
+
+def _render_complex(vf, real_fn, imag_fn, subject, kind, segment, preview, media_dir):
+    x_min, x_max = vf.suggest_x_bounds([("re", real_fn), ("im", imag_fn)])
+    speed, dur = vf.suggest_complex_speed(real_fn, imag_fn, x_min, x_max)
+    duration = max(1.0, min(120.0, (x_max - x_min) / speed)) if speed > 0 else dur
+    overrides = {"media_dir": media_dir} if media_dir else {}
+    vf.render_complex(real_fn, imag_fn, (x_min, x_max), duration, segment,
+                      preview=preview, output_name=subject, kind=kind, **overrides)
+
+
+# ---- complete analysis -------------------------------------------------
+
+def complete_analysis(spreadsheet1, spreadsheet2, out_dir=".", media_dir="",
+                      preview=False, log=print):
+    """Full pipeline for two spreadsheets:
+
+        each -> regression (auto harmonics) -> remove shift (real) & Hilbert
+        (imag) -> complex -> oscillator; both -> synchronization r(t) -> saved
+        .mfunc -> visualization.
+
+    `log(str)` receives progress lines. Returns the path of the final .mfunc."""
+    oscillators, names = [], []
+    for spreadsheet in (spreadsheet1, spreadsheet2):
+        data = PointSeries.from_file(spreadsheet)
+        stem = Path(spreadsheet).stem
+        log(f"Loaded {Path(spreadsheet).name}: {len(data)} points "
+            f"(time_based={data.time_based})")
+        oscillators.append(_analyze_to_oscillator(data, stem, log))
+        names.append(stem)
+
+    sync = _sync_function(oscillators[0], oscillators[1])
+    out = Path(out_dir or ".") / f"{names[0]}_{names[1]}_sync.mfunc"
+    sync.save(out, header=f"Complete analysis: synchronization r(t) of "
+                          f"{names[0]} and {names[1]}")
+    log(f"Wrote {out}")
+
+    import visualize_functions as vf
+    label = out.stem
+    items = [(label, sync)]
+    x_min, x_max = vf.suggest_x_bounds(items)
+    y_min, y_max = vf.suggest_y_bounds(items, x_min, x_max)
+    overrides = {"media_dir": media_dir} if media_dir else {}
+    log("Rendering synchronization r(t)...")
+    vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
+              preview=preview, test=False, output_name=label, **overrides)
+    log(f"Done. Video under {media_dir or 'media'}/videos/")
+    return str(out)
+
+
+def _analyze_to_oscillator(data, stem, log):
+    """One dataset -> regression -> remove shift (real) & Hilbert (imag) ->
+    complex -> oscillator phase MathFunction. Harmonics chosen automatically."""
+    sinusoids = regression.fit(data, None)  # None -> best_harmonics guess
+    log(f"  {stem}: fit {len(sinusoids)} harmonic(s)")
+    regression_fit = MathFunction([str(s) for s in sinusoids], name=stem,
+                                  time_based=data.time_based)
+    real = transforms.remove_shift(regression_fit)
+    imag = transforms.hilbert(real)
+    cf = ComplexFunction(real, imag, name=stem)
+    return MathFunction([cf.phase_expression()], name=stem, time_based=cf.time_based)

@@ -1,0 +1,10 @@
+*.csv
+*.xlsm
+*.xlsx
+*.mp4
+*.pseries
+*.mfunc
+*.cfunc
+*.oscillator
+/.claude/
+/.venv/
