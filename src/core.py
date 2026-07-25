@@ -120,7 +120,7 @@ def task_sync(osc1_file, osc2_file, out_path):
 
 # ---- visualization -----------------------------------------------------
 
-def task_visualize_functions(items_text, preview, media_dir):
+def task_visualize_functions(items_text, open_video, test, media_dir):
     import visualize_functions as vf
 
     items = []
@@ -136,50 +136,51 @@ def task_visualize_functions(items_text, preview, media_dir):
     output_name = "_".join(lbl for lbl, _ in items)
     overrides = {"media_dir": media_dir} if media_dir else {}
     vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
-              preview=preview, output_name=output_name, **overrides)
+              preview=open_video, test=test, output_name=output_name, **overrides)
     return f"Rendered {len(items)} item(s). Video under {media_dir or 'media'}/videos/"
 
 
-def task_visualize_complex(cfunc_file, preview, media_dir):
+def task_visualize_complex(cfunc_file, open_video, test, media_dir):
     import visualize_functions as vf
 
     cf = ComplexFunction.from_file(cfunc_file)
-    _render_complex(vf, cf.real, cf.imag, subject=Path(cfunc_file).stem,
-                    kind="complex", segment=False, preview=preview, media_dir=media_dir)
+    _render_complex(vf, cf.real, cf.imag, subject=Path(cfunc_file).stem, kind="complex",
+                    segment=False, open_video=open_video, test=test, media_dir=media_dir)
     return f"Rendered complex trajectory. Video under {media_dir or 'media'}/videos/"
 
 
-def task_visualize_oscillator(osc_file, preview, media_dir):
+def task_visualize_oscillator(osc_file, open_video, test, media_dir):
     import visualize_functions as vf
 
     theta = MathFunction.from_file(osc_file)
     th = theta.expression()
     real_fn = MathFunction.from_expression(f"cos(({th}))", time_based=theta.time_based)
     imag_fn = MathFunction.from_expression(f"sin(({th}))", time_based=theta.time_based)
-    _render_complex(vf, real_fn, imag_fn, subject=Path(osc_file).stem,
-                    kind="oscillator", segment=True, preview=preview, media_dir=media_dir)
+    _render_complex(vf, real_fn, imag_fn, subject=Path(osc_file).stem, kind="oscillator",
+                    segment=True, open_video=open_video, test=test, media_dir=media_dir)
     return f"Rendered oscillator phasor. Video under {media_dir or 'media'}/videos/"
 
 
-def _render_complex(vf, real_fn, imag_fn, subject, kind, segment, preview, media_dir):
+def _render_complex(vf, real_fn, imag_fn, subject, kind, segment, open_video, test, media_dir):
     x_min, x_max = vf.suggest_x_bounds([("re", real_fn), ("im", imag_fn)])
     speed, dur = vf.suggest_complex_speed(real_fn, imag_fn, x_min, x_max)
     duration = max(1.0, min(120.0, (x_max - x_min) / speed)) if speed > 0 else dur
     overrides = {"media_dir": media_dir} if media_dir else {}
     vf.render_complex(real_fn, imag_fn, (x_min, x_max), duration, segment,
-                      preview=preview, output_name=subject, kind=kind, **overrides)
+                      preview=open_video, test=test, output_name=subject, kind=kind, **overrides)
 
 
 # ---- complete analysis -------------------------------------------------
 
 def complete_analysis(spreadsheet1, spreadsheet2, out_dir=".", media_dir="",
-                      preview=False, log=print):
+                      open_video=False, test=False, log=print):
     """Full pipeline for two spreadsheets:
 
         each -> regression (auto harmonics) -> remove shift (real) & Hilbert
         (imag) -> complex -> oscillator; both -> synchronization r(t) -> saved
         .mfunc -> visualization.
 
+    `open_video` opens the finished video; `test` renders a fast low-res preview.
     `log(str)` receives progress lines. Returns the path of the final .mfunc."""
     oscillators, names = [], []
     for spreadsheet in (spreadsheet1, spreadsheet2):
@@ -204,7 +205,7 @@ def complete_analysis(spreadsheet1, spreadsheet2, out_dir=".", media_dir="",
     overrides = {"media_dir": media_dir} if media_dir else {}
     log("Rendering synchronization r(t)...")
     vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
-              preview=preview, test=False, output_name=label, **overrides)
+              preview=open_video, test=test, output_name=label, **overrides)
     log(f"Done. Video under {media_dir or 'media'}/videos/")
     return str(out)
 

@@ -10,11 +10,19 @@ Two sections:
     synchronization r(t) -> visualization) with one button.
   * Individual Tasks  - pick one toolkit task; its input fields appear; run it.
 
-Every task (and the Complete Analysis section) has a Flags text box. Visualize
-tasks additionally have an Export path (the media folder to render into; blank =
-the current folder's media). Flags and export paths are remembered per task/
-section - kept in memory and written to a preferences file (chronopolis_prefs.
-json) so they persist across restarts. Input files are never saved.
+Every task (and the Complete Analysis section) has a Flags text box. For the
+tasks that render video (the three Visualize tasks and Complete Analysis) the
+flags are:
+    -o   open the finished video automatically
+    -p   render a fast, low-resolution preview instead of full quality
+Those tasks also have an output/export video path (the media folder to render
+into; blank = the current folder's media). Flags and export paths are remembered
+per task/section - kept in memory and written to a preferences file
+(chronopolis_prefs.json) so they persist across restarts. Input files are never
+saved.
+
+File paths can be typed, chosen with Browse, or drag-and-dropped onto a field
+(needs the optional tkinterdnd2 package; without it, use Browse).
 
 The interface is intentionally unstyled: plain Tk widgets, basic layout only.
 
@@ -29,6 +37,16 @@ from pathlib import Path
 from tkinter import filedialog
 
 import core
+
+# Optional cross-platform file drag-and-drop (macOS/Windows/Linux) via
+# tkinterdnd2. If it's unavailable the app still works - you just use Browse.
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    DND_AVAILABLE = True
+except Exception:
+    DND_FILES = None
+    TkinterDnD = None
+    DND_AVAILABLE = False
 
 PREFS_PATH = Path(__file__).with_name("chronopolis_prefs.json")
 DEFAULT_MEDIA = str(Path.cwd() / "media")
@@ -65,7 +83,8 @@ def _parse_harmonics(text):
 
 
 # Task registry. Each task: input field specs and a runner that receives the
-# field values (dict), the preview flag, and the export path.
+# field values (dict), the open_video flag (-o), the test flag (-p), and the
+# export path. Non-visualize tasks ignore the last three.
 #
 # field spec = (key, label, kind, extra)
 #   kind "file"      -> entry + Browse   (extra = file dialog filters or None)
@@ -81,7 +100,7 @@ TASKS = [
             ("out", "Output .pseries (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_pointseries(v["spreadsheet"], v["out"]),
+        "run": lambda v, o, t, e: core.task_pointseries(v["spreadsheet"], v["out"]),
     },
     {
         "key": "regression",
@@ -92,7 +111,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_regression(
+        "run": lambda v, o, t, e: core.task_regression(
             v["data"], _parse_harmonics(v["harmonics"]), v["out"]),
     },
     {
@@ -104,7 +123,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_transform(v["mfunc"], v["transform"], v["out"]),
+        "run": lambda v, o, t, e: core.task_transform(v["mfunc"], v["transform"], v["out"]),
     },
     {
         "key": "create_function",
@@ -114,7 +133,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_create_function(v["expr"], v["out"]),
+        "run": lambda v, o, t, e: core.task_create_function(v["expr"], v["out"]),
     },
     {
         "key": "create_complex",
@@ -125,7 +144,7 @@ TASKS = [
             ("out", "Output .cfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_create_complex(v["real"], v["imag"], v["out"]),
+        "run": lambda v, o, t, e: core.task_create_complex(v["real"], v["imag"], v["out"]),
     },
     {
         "key": "oscillator",
@@ -135,7 +154,7 @@ TASKS = [
             ("out", "Output .oscillator (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_oscillator(v["cfunc"], v["out"]),
+        "run": lambda v, o, t, e: core.task_oscillator(v["cfunc"], v["out"]),
     },
     {
         "key": "sync",
@@ -146,7 +165,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, p, e: core.task_sync(v["osc1"], v["osc2"], v["out"]),
+        "run": lambda v, o, t, e: core.task_sync(v["osc1"], v["osc2"], v["out"]),
     },
     {
         "key": "visualize_functions",
@@ -156,7 +175,7 @@ TASKS = [
                       "expression in x)", "multiline", None),
         ],
         "visualize": True,
-        "run": lambda v, p, e: core.task_visualize_functions(v["items"], p, e),
+        "run": lambda v, o, t, e: core.task_visualize_functions(v["items"], o, t, e),
     },
     {
         "key": "visualize_complex",
@@ -165,7 +184,7 @@ TASKS = [
             ("cfunc", "Input .cfunc", "file", None),
         ],
         "visualize": True,
-        "run": lambda v, p, e: core.task_visualize_complex(v["cfunc"], p, e),
+        "run": lambda v, o, t, e: core.task_visualize_complex(v["cfunc"], o, t, e),
     },
     {
         "key": "visualize_oscillator",
@@ -174,9 +193,12 @@ TASKS = [
             ("oscillator", "Input .oscillator", "file", None),
         ],
         "visualize": True,
-        "run": lambda v, p, e: core.task_visualize_oscillator(v["oscillator"], p, e),
+        "run": lambda v, o, t, e: core.task_visualize_oscillator(v["oscillator"], o, t, e),
     },
 ]
+
+# Flags shown/accepted for visualize tasks and Complete Analysis.
+FLAGS_HINT = "(-o = open the video when done;  -p = fast low-res preview render)"
 
 TASK_BY_KEY = {t["key"]: t for t in TASKS}
 TASK_BY_LABEL = {t["label"]: t for t in TASKS}
@@ -275,7 +297,7 @@ class ChronopolisApp:
     # ---- preferences ----------------------------------------------------
 
     def _load_prefs(self):
-        default = {"complete_flags": "", "tasks": {},
+        default = {"complete_flags": "", "complete_media": "", "tasks": {},
                    "last_section": "complete", "last_task": TASKS[0]["key"]}
         try:
             with open(PREFS_PATH) as f:
@@ -300,6 +322,7 @@ class ChronopolisApp:
         self.prefs["last_section"] = self.current_section
         if self.current_section == "complete":
             self.prefs["complete_flags"] = self.ca_flags.get()
+            self.prefs["complete_media"] = self.ca_media.value()
         elif self.current_section == "tasks" and self.current_task:
             self.prefs["last_task"] = self.current_task
             entry = self.prefs["tasks"].setdefault(self.current_task, {})
@@ -319,19 +342,29 @@ class ChronopolisApp:
         self.ca_sp1 = self._file_row(f, "Spreadsheet 1:", SPREADSHEET_TYPES)
         self.ca_sp2 = self._file_row(f, "Spreadsheet 2:", SPREADSHEET_TYPES)
 
+        # Output video folder (persisted).
+        vrow = tk.Frame(f)
+        vrow.pack(anchor="w", fill="x")
+        tk.Label(vrow, text="Output video path:").pack(side="left")
+        self.ca_media = PlaceholderEntry(vrow, placeholder=DEFAULT_MEDIA, width=50)
+        self.ca_media.pack(side="left")
+        self.ca_media.set_value(self.prefs.get("complete_media", ""))
+
         row = tk.Frame(f)
         row.pack(anchor="w", fill="x")
         tk.Label(row, text="Flags:").pack(side="left")
         self.ca_flags = tk.Entry(row, width=50)
         self.ca_flags.pack(side="left")
         self.ca_flags.insert(0, self.prefs.get("complete_flags", ""))
+        tk.Label(f, text=FLAGS_HINT).pack(anchor="w")
 
         btn = tk.Button(f, text="Run Complete Analysis", command=self._run_complete)
         btn.pack(anchor="w")
         self.run_buttons.append(btn)
 
     def _file_row(self, parent, label, filetypes):
-        """A label + entry + Browse button row. Returns the entry."""
+        """A label + entry + Browse button row (with file drag-and-drop). Returns
+        the entry."""
         row = tk.Frame(parent)
         row.pack(anchor="w", fill="x")
         tk.Label(row, text=label).pack(side="left")
@@ -339,6 +372,7 @@ class ChronopolisApp:
         entry.pack(side="left")
         tk.Button(row, text="Browse",
                   command=lambda: self._browse(entry, filetypes)).pack(side="left")
+        self._enable_file_drop(entry)
         return entry
 
     def _browse(self, entry, filetypes):
@@ -346,6 +380,36 @@ class ChronopolisApp:
         if path:
             entry.delete(0, "end")
             entry.insert(0, path)
+
+    def _enable_file_drop(self, entry):
+        """Lets the user drop a file onto `entry` to fill in its path. No-op when
+        tkinterdnd2 is unavailable. Cross-platform (macOS/Windows/Linux)."""
+        if not DND_AVAILABLE:
+            return
+
+        def on_drop(event):
+            paths = self.root.tk.splitlist(event.data)  # handles spaces/braces
+            if paths:
+                entry.delete(0, "end")
+                entry.insert(0, paths[0])  # single-file slot: take the first
+            return event.action
+
+        entry.drop_target_register(DND_FILES)
+        entry.dnd_bind("<<Drop>>", on_drop)
+
+    def _enable_multiline_drop(self, text):
+        """Lets the user drop one or more files onto a multiline box, appending
+        each path as its own line. No-op when tkinterdnd2 is unavailable."""
+        if not DND_AVAILABLE:
+            return
+
+        def on_drop(event):
+            for path in self.root.tk.splitlist(event.data):
+                text.insert("end", path + "\n")
+            return event.action
+
+        text.drop_target_register(DND_FILES)
+        text.dnd_bind("<<Drop>>", on_drop)
 
     # ---- individual-tasks section --------------------------------------
 
@@ -395,8 +459,7 @@ class ChronopolisApp:
             self.export_entry = PlaceholderEntry(erow, placeholder=DEFAULT_MEDIA, width=50)
             self.export_entry.pack(side="left")
             self.export_entry.set_value(prefs.get("export", ""))
-            tk.Label(self.task_body,
-                     text="(-p in Flags = open a preview when done)").pack(anchor="w")
+            tk.Label(self.task_body, text=FLAGS_HINT).pack(anchor="w")
 
         btn = tk.Button(self.task_body, text="Run", command=self._run_task)
         btn.pack(anchor="w")
@@ -408,6 +471,7 @@ class ChronopolisApp:
             tk.Label(parent, text=label + ":").pack(anchor="w")
             text = tk.Text(parent, height=5, width=70)
             text.pack(anchor="w", fill="x")
+            self._enable_multiline_drop(text)  # drop files to append their paths
             return lambda: text.get("1.0", "end-1c").strip()
 
         row = tk.Frame(parent)
@@ -424,6 +488,7 @@ class ChronopolisApp:
         if kind == "file":
             tk.Button(row, text="Browse",
                       command=lambda: self._browse(entry, extra)).pack(side="left")
+            self._enable_file_drop(entry)  # drop a file to fill in its path
         return entry.get
 
     # ---- section switching ---------------------------------------------
@@ -483,11 +548,12 @@ class ChronopolisApp:
         except Exception as e:  # a getter should not fail, but be safe
             self._append(f"ERROR: {e}")
             return
-        flags = self.flags_entry.get() if self.flags_entry else ""
-        preview = "-p" in flags.split()
+        tokens = (self.flags_entry.get() if self.flags_entry else "").split()
+        open_video = "-o" in tokens
+        test = "-p" in tokens
         export = self.export_entry.value() if self.export_entry else ""
         self._append(f"--- Running: {task['label']} ---")
-        self._start(lambda: task["run"](values, preview, export))
+        self._start(lambda: task["run"](values, open_video, test, export))
 
     def _run_complete(self):
         if self._busy:
@@ -498,10 +564,14 @@ class ChronopolisApp:
         if not sp1 or not sp2:
             self._append("ERROR: choose both spreadsheets first.")
             return
+        tokens = self.ca_flags.get().split()
+        open_video = "-o" in tokens
+        test = "-p" in tokens
+        media = self.ca_media.value()
         self._append("--- Running: Complete Analysis ---")
         self._start(lambda: core.complete_analysis(sp1, sp2, out_dir=".",
-                                                    media_dir="", preview=False,
-                                                    log=self._post))
+                                                    media_dir=media, open_video=open_video,
+                                                    test=test, log=self._post))
 
     def _start(self, work):
         """Runs `work()` on a worker thread; reports its result/errors. All UI
@@ -528,7 +598,9 @@ class ChronopolisApp:
 
 
 def main():
-    root = tk.Tk()
+    # A TkinterDnD root enables file drag-and-drop; fall back to plain Tk if the
+    # optional dependency is missing (the app then works without drag-and-drop).
+    root = TkinterDnD.Tk() if DND_AVAILABLE else tk.Tk()
     ChronopolisApp(root)
     root.mainloop()
 
