@@ -25,6 +25,7 @@ chronopolis_prefs.json
 __pycache__/
 *.pyc
 
-# environments / editor
+# environments / editor / OS cruft
 /.claude/
 /.venv/
+.DS_Store
