@@ -11,10 +11,16 @@ Two sections:
   * Individual Tasks  - pick one toolkit task; its input fields appear; run it.
 
 Every task (and the Complete Analysis section) has a Flags text box. For the
-tasks that render video (the three Visualize tasks and Complete Analysis) the
-flags are:
-    -o   open the finished video automatically
-    -p   render a fast, low-resolution preview instead of full quality
+tasks that render video (the three Visualize tasks and Complete Analysis):
+    -o        open the finished video automatically
+    -p        render a fast, low-resolution preview (720p default; -p = 360p)
+    -hd       render at 1080p instead of the 720p default
+    -s        draw a segment from the origin to the moving point
+              (Visualize Complex / Oscillator only)
+    -n=NAME   name the output instead of the auto-generated name
+Complete Analysis additionally accepts:
+    -k        also keep each city's intermediate .mfunc/.cfunc/.oscillator
+    -h=N      use N harmonics instead of the automatic best guess
 Those tasks also have an output/export video path (the media folder to render
 into; blank = the current folder's media). Flags and export paths are remembered
 per task/section - kept in memory and written to a preferences file
@@ -82,9 +88,9 @@ def _parse_harmonics(text):
         raise ValueError("harmonics must be a whole number (or blank for automatic)")
 
 
-# Task registry. Each task: input field specs and a runner that receives the
-# field values (dict), the open_video flag (-o), the test flag (-p), and the
-# export path. Non-visualize tasks ignore the last three.
+# Task registry. Each task: input field specs and a runner run(values, opts).
+# `values` maps field key -> string; `opts` carries the parsed flags/export
+# (open, test, hd, segment, name, export). Non-visualize tasks ignore `opts`.
 #
 # field spec = (key, label, kind, extra)
 #   kind "file"      -> entry + Browse   (extra = file dialog filters or None)
@@ -100,7 +106,7 @@ TASKS = [
             ("out", "Output .pseries (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_pointseries(v["spreadsheet"], v["out"]),
+        "run": lambda v, opts: core.task_pointseries(v["spreadsheet"], v["out"]),
     },
     {
         "key": "regression",
@@ -111,7 +117,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_regression(
+        "run": lambda v, opts: core.task_regression(
             v["data"], _parse_harmonics(v["harmonics"]), v["out"]),
     },
     {
@@ -123,7 +129,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_transform(v["mfunc"], v["transform"], v["out"]),
+        "run": lambda v, opts: core.task_transform(v["mfunc"], v["transform"], v["out"]),
     },
     {
         "key": "create_function",
@@ -133,7 +139,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_create_function(v["expr"], v["out"]),
+        "run": lambda v, opts: core.task_create_function(v["expr"], v["out"]),
     },
     {
         "key": "create_complex",
@@ -144,7 +150,7 @@ TASKS = [
             ("out", "Output .cfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_create_complex(v["real"], v["imag"], v["out"]),
+        "run": lambda v, opts: core.task_create_complex(v["real"], v["imag"], v["out"]),
     },
     {
         "key": "oscillator",
@@ -154,7 +160,7 @@ TASKS = [
             ("out", "Output .oscillator (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_oscillator(v["cfunc"], v["out"]),
+        "run": lambda v, opts: core.task_oscillator(v["cfunc"], v["out"]),
     },
     {
         "key": "sync",
@@ -165,7 +171,7 @@ TASKS = [
             ("out", "Output .mfunc (blank = auto)", "text", None),
         ],
         "visualize": False,
-        "run": lambda v, o, t, e: core.task_sync(v["osc1"], v["osc2"], v["out"]),
+        "run": lambda v, opts: core.task_sync(v["osc1"], v["osc2"], v["out"]),
     },
     {
         "key": "visualize_functions",
@@ -175,7 +181,8 @@ TASKS = [
                       "expression in x)", "multiline", None),
         ],
         "visualize": True,
-        "run": lambda v, o, t, e: core.task_visualize_functions(v["items"], o, t, e),
+        "run": lambda v, opts: core.task_visualize_functions(
+            v["items"], opts["open"], opts["test"], opts["hd"], opts["export"], opts["name"]),
     },
     {
         "key": "visualize_complex",
@@ -184,7 +191,9 @@ TASKS = [
             ("cfunc", "Input .cfunc", "file", None),
         ],
         "visualize": True,
-        "run": lambda v, o, t, e: core.task_visualize_complex(v["cfunc"], o, t, e),
+        "run": lambda v, opts: core.task_visualize_complex(
+            v["cfunc"], opts["open"], opts["test"], opts["hd"], opts["segment"],
+            opts["export"], opts["name"]),
     },
     {
         "key": "visualize_oscillator",
@@ -193,12 +202,30 @@ TASKS = [
             ("oscillator", "Input .oscillator", "file", None),
         ],
         "visualize": True,
-        "run": lambda v, o, t, e: core.task_visualize_oscillator(v["oscillator"], o, t, e),
+        "run": lambda v, opts: core.task_visualize_oscillator(
+            v["oscillator"], opts["open"], opts["test"], opts["hd"], opts["segment"],
+            opts["export"], opts["name"]),
     },
 ]
 
-# Flags shown/accepted for visualize tasks and Complete Analysis.
-FLAGS_HINT = "(-o = open the video when done;  -p = fast low-res preview render)"
+# Flag hints shown under the Flags box.
+VIS_FLAGS_HINT = ("Flags: -o open when done   -p low-res preview   -hd 1080p   "
+                  "-s origin segment [complex/oscillator]   -n=NAME output name")
+CA_FLAGS_HINT = ("Flags: -o open when done   -p low-res preview   -hd 1080p   "
+                 "-k keep intermediates   -h=N harmonics   -n=NAME output name")
+
+
+def _parse_flags(text):
+    """Splits a flags string into (boolean_flags set, key_value dict). Tokens
+    like -o/-p go in the set; tokens like -h=8 or -n=sync go in the dict."""
+    booleans, values = set(), {}
+    for token in (text or "").split():
+        if "=" in token:
+            key, _, value = token.partition("=")
+            values[key] = value
+        else:
+            booleans.add(token)
+    return booleans, values
 
 TASK_BY_KEY = {t["key"]: t for t in TASKS}
 TASK_BY_LABEL = {t["label"]: t for t in TASKS}
@@ -356,7 +383,7 @@ class ChronopolisApp:
         self.ca_flags = tk.Entry(row, width=50)
         self.ca_flags.pack(side="left")
         self.ca_flags.insert(0, self.prefs.get("complete_flags", ""))
-        tk.Label(f, text=FLAGS_HINT).pack(anchor="w")
+        tk.Label(f, text=CA_FLAGS_HINT).pack(anchor="w")
 
         btn = tk.Button(f, text="Run Complete Analysis", command=self._run_complete)
         btn.pack(anchor="w")
@@ -459,7 +486,7 @@ class ChronopolisApp:
             self.export_entry = PlaceholderEntry(erow, placeholder=DEFAULT_MEDIA, width=50)
             self.export_entry.pack(side="left")
             self.export_entry.set_value(prefs.get("export", ""))
-            tk.Label(self.task_body, text=FLAGS_HINT).pack(anchor="w")
+            tk.Label(self.task_body, text=VIS_FLAGS_HINT).pack(anchor="w")
 
         btn = tk.Button(self.task_body, text="Run", command=self._run_task)
         btn.pack(anchor="w")
@@ -548,12 +575,17 @@ class ChronopolisApp:
         except Exception as e:  # a getter should not fail, but be safe
             self._append(f"ERROR: {e}")
             return
-        tokens = (self.flags_entry.get() if self.flags_entry else "").split()
-        open_video = "-o" in tokens
-        test = "-p" in tokens
-        export = self.export_entry.value() if self.export_entry else ""
+        flags, kv = _parse_flags(self.flags_entry.get() if self.flags_entry else "")
+        opts = {
+            "open": "-o" in flags,
+            "test": "-p" in flags,
+            "hd": "-hd" in flags,
+            "segment": "-s" in flags,
+            "name": kv.get("-n") or None,
+            "export": self.export_entry.value() if self.export_entry else "",
+        }
         self._append(f"--- Running: {task['label']} ---")
-        self._start(lambda: task["run"](values, open_video, test, export))
+        self._start(lambda: task["run"](values, opts))
 
     def _run_complete(self):
         if self._busy:
@@ -564,14 +596,22 @@ class ChronopolisApp:
         if not sp1 or not sp2:
             self._append("ERROR: choose both spreadsheets first.")
             return
-        tokens = self.ca_flags.get().split()
-        open_video = "-o" in tokens
-        test = "-p" in tokens
+        flags, kv = _parse_flags(self.ca_flags.get())
+        harmonics = None
+        if "-h" in kv:
+            try:
+                harmonics = int(kv["-h"])
+            except ValueError:
+                self._append("ERROR: -h must be a whole number, e.g. -h=8")
+                return
         media = self.ca_media.value()
+        name = kv.get("-n") or "sync"
+        open_video, test, hd, keep = ("-o" in flags, "-p" in flags,
+                                      "-hd" in flags, "-k" in flags)
         self._append("--- Running: Complete Analysis ---")
-        self._start(lambda: core.complete_analysis(sp1, sp2, out_dir=".",
-                                                    media_dir=media, open_video=open_video,
-                                                    test=test, log=self._post))
+        self._start(lambda: core.complete_analysis(
+            sp1, sp2, out_dir=".", media_dir=media, open_video=open_video, test=test,
+            hd=hd, keep=keep, harmonics=harmonics, name=name, log=self._post))
 
     def _start(self, work):
         """Runs `work()` on a worker thread; reports its result/errors. All UI
