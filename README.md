@@ -17,7 +17,7 @@ An app to analyze synchronization of human activity across regions as part of th
 Download and run the Chronopolis installer (located in releases) in a folder. Chronopolis will be installed in a subfolder in that folder given the dependencies are present.
 
 Windows: .bat
-macOS / Linux: .sh (run it in a terminal: `bash chronopolis_installer.sh`)
+macOS / Linux: .sh (run in a terminal: `bash /path/to/chronopolis_installer.sh`, or just `bash chronopolis_installer.sh` in terminal at folder, can drag and drop file into terminal to autofill path)
 
 ## Usage
 
