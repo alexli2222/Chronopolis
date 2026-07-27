@@ -1,9 +1,8 @@
 #!/bin/bash
 #
-# Launch Chronopolis (Linux). Run with `bash run.sh` or `./run.sh` (after
-# `chmod +x run.sh`). Finds the virtual environment - the installer creates it
-# in the parent folder, and a dev checkout usually has it alongside - then runs
-# src/chronopolis.py.
+# Launch Chronopolis (macOS / Linux). Run with `bash run.sh` or `./run.sh`
+# (after `chmod +x run.sh`). Finds the virtual environment - the installer
+# creates it alongside this script - then runs src/chronopolis.py.
 #
 cd "$(dirname "$0")" || exit 1
 DIR="$(pwd)"

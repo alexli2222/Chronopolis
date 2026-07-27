@@ -17,12 +17,11 @@ An app to analyze synchronization of human activity across regions as part of th
 Download and run the Chronopolis installer (located in releases) in a folder. Chronopolis will be installed in a subfolder in that folder given the dependencies are present.
 
 Windows: .bat
-macOS: .command
-Linux: .sh
+macOS / Linux: .sh (run it in a terminal: `bash chronopolis_installer.sh`)
 
 ## Usage
 
-Two major sections are present (explained below). Launch with `run` script in the installed folder (`run.command` on macOS, `run.sh` on Linux, `run.bat` on Windows).
+Two major sections are present (explained below). Launch with the `run` script in the installed folder (`run.sh` on macOS/Linux, `run.bat` on Windows).
 
 ### Complete Analysis
 
