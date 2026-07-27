@@ -17,6 +17,7 @@
 # clone delivers them into the installed folder.
 chronopolis_installer.command
 chronopolis_installer.bat
+chronopolis_installer.sh
 
 # app runtime state
 chronopolis_prefs.json

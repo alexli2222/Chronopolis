@@ -119,7 +119,16 @@ def task_sync(osc1_file, osc2_file, out_path):
 
 # ---- visualization -----------------------------------------------------
 
-def task_visualize_functions(items_text, open_video, test, hd, media_dir, name=None):
+def _resolve_output_dir(output_dir):
+    """The single folder all outputs go to (the final video and any function
+    files). Defaults to 'media'. Created if it does not exist yet."""
+    text = (output_dir or "").strip() if isinstance(output_dir, str) else str(output_dir or "")
+    target = Path(text) if text else Path("media")
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def task_visualize_functions(items_text, open_video, test, hd, output_dir, name=None):
     import visualize_functions as vf
 
     items = []
@@ -130,74 +139,78 @@ def task_visualize_functions(items_text, open_video, test, hd, media_dir, name=N
     if not items:
         raise ValueError("enter at least one item (a file path or an expression in x)")
 
+    target = _resolve_output_dir(output_dir)
     x_min, x_max = vf.suggest_x_bounds(items)
     y_min, y_max = vf.suggest_y_bounds(items, x_min, x_max)
     output_name = name or "_".join(lbl for lbl, _ in items)
-    overrides = {"media_dir": media_dir} if media_dir else {}
     vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
-              preview=open_video, test=test, hd=hd, output_name=output_name, **overrides)
-    return f"Rendered {len(items)} item(s). Video under {media_dir or 'media'}/videos/"
+              preview=open_video, test=test, hd=hd, output_name=output_name, output_dir=str(target))
+    return f"Rendered {len(items)} item(s) -> {target}"
 
 
-def task_visualize_complex(cfunc_file, open_video, test, hd, segment, media_dir, name=None):
+def task_visualize_complex(cfunc_file, open_video, test, hd, segment, output_dir, name=None):
     import visualize_functions as vf
 
     cf = ComplexFunction.from_file(cfunc_file)
-    _render_complex(vf, cf.real, cf.imag, subject=name or Path(cfunc_file).stem,
-                    kind="complex", segment=segment, open_video=open_video, test=test,
-                    hd=hd, media_dir=media_dir)
-    return f"Rendered complex trajectory. Video under {media_dir or 'media'}/videos/"
+    target = _render_complex(vf, cf.real, cf.imag, subject=name or Path(cfunc_file).stem,
+                             kind="complex", segment=segment, open_video=open_video,
+                             test=test, hd=hd, output_dir=output_dir)
+    return f"Rendered complex trajectory -> {target}"
 
 
-def task_visualize_oscillator(osc_file, open_video, test, hd, segment, media_dir, name=None):
+def task_visualize_oscillator(osc_file, open_video, test, hd, segment, output_dir, name=None):
     import visualize_functions as vf
 
     theta = MathFunction.from_file(osc_file)
     th = theta.expression()
     real_fn = MathFunction.from_expression(f"cos(({th}))", time_based=theta.time_based)
     imag_fn = MathFunction.from_expression(f"sin(({th}))", time_based=theta.time_based)
-    _render_complex(vf, real_fn, imag_fn, subject=name or Path(osc_file).stem,
-                    kind="oscillator", segment=segment, open_video=open_video, test=test,
-                    hd=hd, media_dir=media_dir)
-    return f"Rendered oscillator phasor. Video under {media_dir or 'media'}/videos/"
+    target = _render_complex(vf, real_fn, imag_fn, subject=name or Path(osc_file).stem,
+                             kind="oscillator", segment=segment, open_video=open_video,
+                             test=test, hd=hd, output_dir=output_dir)
+    return f"Rendered oscillator phasor -> {target}"
 
 
-def _render_complex(vf, real_fn, imag_fn, subject, kind, segment, open_video, test, hd, media_dir):
+def _render_complex(vf, real_fn, imag_fn, subject, kind, segment, open_video, test, hd, output_dir):
+    target = _resolve_output_dir(output_dir)
     x_min, x_max = vf.suggest_x_bounds([("re", real_fn), ("im", imag_fn)])
     speed, dur = vf.suggest_complex_speed(real_fn, imag_fn, x_min, x_max)
     duration = max(1.0, min(120.0, (x_max - x_min) / speed)) if speed > 0 else dur
-    overrides = {"media_dir": media_dir} if media_dir else {}
     vf.render_complex(real_fn, imag_fn, (x_min, x_max), duration, segment, preview=open_video,
-                      test=test, hd=hd, output_name=subject, kind=kind, **overrides)
+                      test=test, hd=hd, output_name=subject, output_dir=str(target), kind=kind)
+    return target
 
 
 # ---- complete analysis -------------------------------------------------
 
-def complete_analysis(spreadsheet1, spreadsheet2, out_dir=".", media_dir="",
-                      open_video=False, test=False, hd=False, keep=False,
-                      harmonics=None, name="sync", log=print):
+def complete_analysis(spreadsheet1, spreadsheet2, output_dir="", open_video=False,
+                      test=False, hd=False, keep=False, harmonics=None, name="sync",
+                      log=print):
     """Full pipeline for two spreadsheets:
 
         each -> regression -> remove shift (real) & Hilbert (imag) -> complex ->
         oscillator; both -> synchronization r(t) -> saved .mfunc -> visualization.
 
-    Flags: `open_video` opens the finished video; `test` renders a fast low-res
-    preview; `hd` renders at 1080p; `keep` also saves each city's intermediate
-    files (<stem>.mfunc/.cfunc/.oscillator); `harmonics` overrides the automatic
-    count; `name` is the output base name (default "sync"). `log(str)` receives
-    progress lines. Returns the path of the final .mfunc."""
+    All outputs (the .mfunc and the video, plus any kept intermediates) go into
+    `output_dir` (default "media"); Manim's scaffolding stays in a hidden cache
+    there. Flags: `open_video` opens the finished video; `test` renders a fast
+    low-res preview; `hd` renders at 1080p; `keep` also saves each city's
+    intermediate files (<stem>.mfunc/.cfunc/.oscillator); `harmonics` overrides
+    the automatic count; `name` is the output base name (default "sync").
+    `log(str)` receives progress lines. Returns the path of the final .mfunc."""
+    target = _resolve_output_dir(output_dir)
     oscillators, names = [], []
     for spreadsheet in (spreadsheet1, spreadsheet2):
         data = PointSeries.from_file(spreadsheet)
         stem = Path(spreadsheet).stem
         log(f"Loaded {Path(spreadsheet).name}: {len(data)} points "
             f"(time_based={data.time_based})")
-        oscillators.append(_analyze_to_oscillator(data, stem, harmonics, keep, out_dir, log))
+        oscillators.append(_analyze_to_oscillator(data, stem, harmonics, keep, target, log))
         names.append(stem)
 
     sync = _sync_function(oscillators[0], oscillators[1])
     base = (name or "sync").strip() or "sync"
-    out = Path(out_dir or ".") / paths.ensure_suffix(base, ".mfunc").name
+    out = target / paths.ensure_suffix(base, ".mfunc").name
     sync.save(out, header=f"Complete analysis: synchronization r(t) of "
                           f"{names[0]} and {names[1]}")
     log(f"Wrote {out}")
@@ -207,18 +220,17 @@ def complete_analysis(spreadsheet1, spreadsheet2, out_dir=".", media_dir="",
     items = [(label, sync)]
     x_min, x_max = vf.suggest_x_bounds(items)
     y_min, y_max = vf.suggest_y_bounds(items, x_min, x_max)
-    overrides = {"media_dir": media_dir} if media_dir else {}
     log("Rendering synchronization r(t)...")
     vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
-              preview=open_video, test=test, hd=hd, output_name=label, **overrides)
-    log(f"Done. Video under {media_dir or 'media'}/videos/")
+              preview=open_video, test=test, hd=hd, output_name=label, output_dir=str(target))
+    log(f"Done. All outputs in {target}")
     return str(out)
 
 
 def _analyze_to_oscillator(data, stem, harmonics, keep, out_dir, log):
     """One dataset -> regression -> remove shift (real) & Hilbert (imag) ->
     complex -> oscillator phase MathFunction. `harmonics` None means auto-pick.
-    When `keep`, the regression/complex/oscillator files are saved under `stem`."""
+    When `keep`, the regression/complex/oscillator files are saved in `out_dir`."""
     sinusoids = regression.fit(data, harmonics)  # None -> best_harmonics guess
     log(f"  {stem}: fit {len(sinusoids)} harmonic(s)")
     regression_fit = MathFunction([str(s) for s in sinusoids], name=stem,
@@ -228,7 +240,7 @@ def _analyze_to_oscillator(data, stem, harmonics, keep, out_dir, log):
     cf = ComplexFunction(real, imag, name=stem)
     oscillator = MathFunction([cf.phase_expression()], name=stem, time_based=cf.time_based)
     if keep:
-        base = Path(out_dir or ".")
+        base = Path(out_dir)
         regression_fit.save(base / f"{stem}.mfunc", header=f"Regression fit of {stem}")
         cf.save(base / f"{stem}.cfunc", header=f"Complex function of {stem}")
         oscillator.save(base / f"{stem}.oscillator", header=f"Oscillator of {stem}")

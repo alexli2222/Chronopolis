@@ -21,11 +21,13 @@ tasks that render video (the three Visualize tasks and Complete Analysis):
 Complete Analysis additionally accepts:
     -k        also keep each city's intermediate .mfunc/.cfunc/.oscillator
     -h=N      use N harmonics instead of the automatic best guess
-Those tasks also have an output/export video path (the media folder to render
-into; blank = the current folder's media). Flags and export paths are remembered
-per task/section - kept in memory and written to a preferences file
-(chronopolis_prefs.json) so they persist across restarts. Input files are never
-saved.
+Those tasks also have an Output path - the single folder every output goes into
+(the rendered video and, for Complete Analysis, the .mfunc and any kept
+intermediate files). Blank means the current folder's "media". Manim's temporary
+build files are tucked into a hidden .manim_cache there so the folder stays
+clean. Flags and output paths are remembered per task/section - kept in memory
+and written to a preferences file (chronopolis_prefs.json) so they persist across
+restarts. Input files are never saved.
 
 File paths can be typed, chosen with Browse, or drag-and-dropped onto a field
 (needs the optional tkinterdnd2 package; without it, use Browse).
@@ -55,7 +57,7 @@ except Exception:
     DND_AVAILABLE = False
 
 PREFS_PATH = Path(__file__).with_name("chronopolis_prefs.json")
-DEFAULT_MEDIA = str(Path.cwd() / "media")
+DEFAULT_OUTPUT = str(Path.cwd() / "media")
 
 
 def _load_version():
@@ -182,7 +184,7 @@ TASKS = [
         ],
         "visualize": True,
         "run": lambda v, opts: core.task_visualize_functions(
-            v["items"], opts["open"], opts["test"], opts["hd"], opts["export"], opts["name"]),
+            v["items"], opts["open"], opts["test"], opts["hd"], opts["output"], opts["name"]),
     },
     {
         "key": "visualize_complex",
@@ -193,7 +195,7 @@ TASKS = [
         "visualize": True,
         "run": lambda v, opts: core.task_visualize_complex(
             v["cfunc"], opts["open"], opts["test"], opts["hd"], opts["segment"],
-            opts["export"], opts["name"]),
+            opts["output"], opts["name"]),
     },
     {
         "key": "visualize_oscillator",
@@ -204,7 +206,7 @@ TASKS = [
         "visualize": True,
         "run": lambda v, opts: core.task_visualize_oscillator(
             v["oscillator"], opts["open"], opts["test"], opts["hd"], opts["segment"],
-            opts["export"], opts["name"]),
+            opts["output"], opts["name"]),
     },
 ]
 
@@ -229,6 +231,41 @@ def _parse_flags(text):
 
 TASK_BY_KEY = {t["key"]: t for t in TASKS}
 TASK_BY_LABEL = {t["label"]: t for t in TASKS}
+
+# One-line, in-app explanations shown when a task is selected, so users can work
+# without reading the README.
+TASK_DESCRIPTIONS = {
+    "pointseries":
+        "Reads a two-column x,y spreadsheet and saves it as a .pseries point set. "
+        "The x column may be numbers or timestamps (e.g. 2025-06-01); y must be numeric.",
+    "regression":
+        "Fits a sum of sinusoids (a Fourier series) to x,y data and saves a .mfunc. "
+        "Leave Harmonics blank to auto-pick the best count, or set it yourself.",
+    "transform":
+        "Transforms a sinusoidal .mfunc: 'hilbert' phase-shifts every component by "
+        "-90 degrees (the imaginary part); 'remove_shift' removes the vertical offset "
+        "so it is centered on 0 (the real part).",
+    "create_function":
+        "Builds a function from a math expression in x (e.g. sin(x)+x). Reference a "
+        "saved function with [name] to combine them. Saves a .mfunc.",
+    "create_complex":
+        "Builds a complex function f(x) = real(x) + i*imag(x) from two expressions "
+        "and saves a .cfunc.",
+    "oscillator":
+        "Turns a .cfunc into an oscillator - its phase theta(t) = atan2(imag, real). "
+        "Saves a .oscillator.",
+    "sync":
+        "Computes the Kuramoto synchronization r(t) of two oscillators "
+        "(1 = fully in sync, 0 = anti-phase) and saves it as a .mfunc.",
+    "visualize_functions":
+        "Renders an animation of one or more functions and/or point series on one "
+        "plot. Enter one item per line: a .mfunc/.pseries path or an expression in x.",
+    "visualize_complex":
+        "Animates a complex function f(x) = real + i*imag as a moving point tracing "
+        "its path through the complex plane.",
+    "visualize_oscillator":
+        "Animates an oscillator's phasor e^(i*theta(t)) spinning on the unit circle.",
+}
 
 
 class PlaceholderEntry(tk.Entry):
@@ -289,8 +326,13 @@ class ChronopolisApp:
         # thread drains on a timer (Tkinter is not thread-safe).
         self._queue = queue.Queue()
 
-        # Header.
+        # Header + a short "what is this" so the app is self-explanatory.
         tk.Label(root, text=f"Chronopolis {VERSION} - the rhythm of cities").pack(anchor="w")
+        tk.Label(root, justify="left", wraplength=680, text=(
+            "Measures how the rhythm of human activity synchronizes between two regions. "
+            "Use Complete Analysis for the whole pipeline in one click, or Individual "
+            "Tasks for step-by-step control. Progress and any errors appear in Status "
+            "below. Flag options are listed under each Flags box.")).pack(anchor="w")
 
         # Section switcher.
         bar = tk.Frame(root)
@@ -363,8 +405,13 @@ class ChronopolisApp:
 
     def _build_complete_section(self):
         f = self.complete_frame
-        tk.Label(f, text="Complete Analysis: two spreadsheets -> synchronization "
-                         "r(t) -> visualization").pack(anchor="w")
+        tk.Label(f, justify="left", wraplength=640, text=(
+            "Complete Analysis runs the whole pipeline on two spreadsheets in one step: "
+            "each is fit with sinusoidal regression, turned into a phase oscillator "
+            "(remove-shift + Hilbert -> complex -> phase), and the two are compared with "
+            "the Kuramoto order parameter r(t) (1 = in sync, 0 = anti-phase). It writes "
+            "sync.mfunc and renders a video of r(t). Pick two x,y spreadsheets (x may be "
+            "timestamps) and press Run.")).pack(anchor="w", pady=(0, 4))
 
         self.ca_sp1 = self._file_row(f, "Spreadsheet 1:", SPREADSHEET_TYPES)
         self.ca_sp2 = self._file_row(f, "Spreadsheet 2:", SPREADSHEET_TYPES)
@@ -372,8 +419,8 @@ class ChronopolisApp:
         # Output video folder (persisted).
         vrow = tk.Frame(f)
         vrow.pack(anchor="w", fill="x")
-        tk.Label(vrow, text="Output video path:").pack(side="left")
-        self.ca_media = PlaceholderEntry(vrow, placeholder=DEFAULT_MEDIA, width=50)
+        tk.Label(vrow, text="Output path:").pack(side="left")
+        self.ca_media = PlaceholderEntry(vrow, placeholder=DEFAULT_OUTPUT, width=50)
         self.ca_media.pack(side="left")
         self.ca_media.set_value(self.prefs.get("complete_media", ""))
 
@@ -466,6 +513,12 @@ class ChronopolisApp:
         self.current_task = task_key
         task = TASK_BY_KEY[task_key]
 
+        # What this task does (so users don't have to read the docs).
+        desc = TASK_DESCRIPTIONS.get(task_key, "")
+        if desc:
+            tk.Label(self.task_body, text=desc, justify="left",
+                     wraplength=620).pack(anchor="w", pady=(0, 4))
+
         for key, label, kind, extra in task["fields"]:
             self.field_getters[key] = self._build_field(self.task_body, key, label, kind, extra)
 
@@ -478,12 +531,12 @@ class ChronopolisApp:
         self.flags_entry.pack(side="left")
         self.flags_entry.insert(0, prefs.get("flags", ""))
 
-        # Export path (persisted) - visualize tasks only.
+        # Output path (persisted) - visualize tasks only.
         if task["visualize"]:
             erow = tk.Frame(self.task_body)
             erow.pack(anchor="w", fill="x")
-            tk.Label(erow, text="Export path:").pack(side="left")
-            self.export_entry = PlaceholderEntry(erow, placeholder=DEFAULT_MEDIA, width=50)
+            tk.Label(erow, text="Output path:").pack(side="left")
+            self.export_entry = PlaceholderEntry(erow, placeholder=DEFAULT_OUTPUT, width=50)
             self.export_entry.pack(side="left")
             self.export_entry.set_value(prefs.get("export", ""))
             tk.Label(self.task_body, text=VIS_FLAGS_HINT).pack(anchor="w")
@@ -582,7 +635,7 @@ class ChronopolisApp:
             "hd": "-hd" in flags,
             "segment": "-s" in flags,
             "name": kv.get("-n") or None,
-            "export": self.export_entry.value() if self.export_entry else "",
+            "output": self.export_entry.value() if self.export_entry else "",
         }
         self._append(f"--- Running: {task['label']} ---")
         self._start(lambda: task["run"](values, opts))
@@ -604,13 +657,13 @@ class ChronopolisApp:
             except ValueError:
                 self._append("ERROR: -h must be a whole number, e.g. -h=8")
                 return
-        media = self.ca_media.value()
+        output = self.ca_media.value()
         name = kv.get("-n") or "sync"
         open_video, test, hd, keep = ("-o" in flags, "-p" in flags,
                                       "-hd" in flags, "-k" in flags)
         self._append("--- Running: Complete Analysis ---")
         self._start(lambda: core.complete_analysis(
-            sp1, sp2, out_dir=".", media_dir=media, open_video=open_video, test=test,
+            sp1, sp2, output_dir=output, open_video=open_video, test=test,
             hd=hd, keep=keep, harmonics=harmonics, name=name, log=self._post))
 
     def _start(self, work):

@@ -243,13 +243,24 @@ def _nice_step(span: float) -> float:
     return magnitude * 10
 
 
+def _route_output(config, output_dir):
+    """Send the finished video straight into output_dir, and keep all of Manim's
+    intermediate scaffolding (partial movie files, images, texts) in a hidden
+    .manim_cache subfolder - so the output folder shows only the final video."""
+    cache = str(Path(output_dir) / ".manim_cache")
+    config.media_dir = cache
+    config.video_dir = str(output_dir)
+    config.partial_movie_dir = str(Path(cache) / "partial_movie_files")
+
+
 def render(functions=None, x_range=None, y_range=None, preview=True, test=False,
-           hd=False, output_name=None, **config_overrides):
+           hd=False, output_name=None, output_dir=None, **config_overrides):
     """Renders the given functions. Imports manim lazily so the rest of the
     toolkit works without it installed. If y_range is None the scene auto-fits.
     test=True does a fast, low-resolution/low-frame-rate preview; hd=True renders
     at 1080p (vs the 720p default). output_name names the exported video file
-    (kept distinct so exports don't overwrite)."""
+    (kept distinct so exports don't overwrite); output_dir is the folder the
+    final video is written to (scaffolding goes to a hidden cache inside it)."""
     global FUNCTIONS, X_RANGE, Y_RANGE, X_TIME_BASED, TEST_MODE
     if functions is not None:
         FUNCTIONS = functions
@@ -267,13 +278,15 @@ def render(functions=None, x_range=None, y_range=None, preview=True, test=False,
         return
 
     _apply_config(config, _media_name(output_name, "functions"), preview, test, hd)
+    if output_dir:
+        _route_output(config, output_dir)
     for key, value in config_overrides.items():
         setattr(config, key, value)
     _FunctionPlotScene().render()
 
 
 def render_complex(real_fn, imag_fn, x_range, duration, segment, preview=True, test=False,
-                   hd=False, output_name=None, kind="complex", **config_overrides):
+                   hd=False, output_name=None, output_dir=None, kind="complex", **config_overrides):
     """Renders f(x) = real_fn(x) + i*imag_fn(x) as an animated trajectory in the
     complex plane. `duration` is the sweep length in seconds; `segment` draws a
     line from the origin to the moving point instead of a bare dot.
@@ -294,6 +307,8 @@ def render_complex(real_fn, imag_fn, x_range, duration, segment, preview=True, t
         return
 
     _apply_config(config, _media_name(output_name, kind), preview, test, hd)
+    if output_dir:
+        _route_output(config, output_dir)
     for key, value in config_overrides.items():
         setattr(config, key, value)
     _ComplexPlotScene().render()
