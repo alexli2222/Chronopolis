@@ -13,10 +13,7 @@
 *.mp4
 
 # installers (distributed via GitHub Releases, not tracked in the repo).
-# Only the installers are ignored - run.sh / run.bat ARE tracked, so the clone
-# delivers them into the installed folder.
-chronopolis_installer.bat
-chronopolis_installer.sh
+installers/
 
 # app runtime state
 chronopolis_prefs.json
