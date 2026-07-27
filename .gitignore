@@ -15,8 +15,8 @@
 # installers (distributed via GitHub Releases, not tracked in the repo).
 # Only the installers are ignored - run.command / run.bat ARE tracked, so the
 # clone delivers them into the installed folder.
-installer.command
-installer.bat
+chronopolis_installer.command
+chronopolis_installer.bat
 
 # app runtime state
 chronopolis_prefs.json
@@ -28,4 +28,5 @@ __pycache__/
 # environments / editor / OS cruft
 /.claude/
 /.venv/
+td.txt
 .DS_Store
