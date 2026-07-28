@@ -200,11 +200,15 @@ def complete_analysis(spreadsheet1, spreadsheet2, output_dir="", open_video=Fals
     `log(str)` receives progress lines. Returns the path of the final .mfunc."""
     target = _resolve_output_dir(output_dir)
     oscillators, names = [], []
+    data_xs = []  # every input x, so we can anchor the plot to the real domain
     for spreadsheet in (spreadsheet1, spreadsheet2):
         data = PointSeries.from_file(spreadsheet)
         stem = Path(spreadsheet).stem
         log(f"Loaded {Path(spreadsheet).name}: {len(data)} points "
             f"(time_based={data.time_based})")
+        if data.xs:
+            data_xs.append(min(data.xs))
+            data_xs.append(max(data.xs))
         oscillators.append(_analyze_to_oscillator(data, stem, harmonics, keep, target, log))
         names.append(stem)
 
@@ -218,7 +222,14 @@ def complete_analysis(spreadsheet1, spreadsheet2, output_dir="", open_video=Fals
     import visualize_functions as vf
     label = out.stem
     items = [(label, sync)]
-    x_min, x_max = vf.suggest_x_bounds(items)
+    # Anchor the x-range to the actual data domain. The sync r(t) is a symbolic
+    # sum of sinusoids, so suggest_x_bounds would reset the origin to 0 - which,
+    # for time-based data, renders the x-axis starting at the Unix epoch (1970)
+    # instead of the real dates. Fall back to the estimate only without data.
+    if len(data_xs) >= 2:
+        x_min, x_max = min(data_xs), max(data_xs)
+    else:
+        x_min, x_max = vf.suggest_x_bounds(items)
     y_min, y_max = vf.suggest_y_bounds(items, x_min, x_max)
     log("Rendering synchronization r(t)...")
     vf.render(functions=items, x_range=(x_min, x_max), y_range=(y_min, y_max),
