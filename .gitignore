@@ -18,6 +18,10 @@ installers/
 # app runtime state
 chronopolis_prefs.json
 
+# app output folder + Manim scaffolding
+/out/
+.manim_cache/
+
 # python caches
 __pycache__/
 *.pyc

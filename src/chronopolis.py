@@ -23,7 +23,7 @@ Complete Analysis additionally accepts:
     -h=N      use N harmonics instead of the automatic best guess
 Those tasks also have an Output path - the single folder every output goes into
 (the rendered video and, for Complete Analysis, the .mfunc and any kept
-intermediate files). Blank means the current folder's "media". Manim's temporary
+intermediate files). Blank means the current folder's "out". Manim's temporary
 build files are tucked into a hidden .manim_cache there so the folder stays
 clean. Flags and output paths are remembered per task/section - kept in memory
 and written to a preferences file (chronopolis_prefs.json) so they persist across
@@ -57,7 +57,7 @@ except Exception:
     DND_AVAILABLE = False
 
 PREFS_PATH = Path(__file__).with_name("chronopolis_prefs.json")
-DEFAULT_OUTPUT = str(Path.cwd() / "media")
+DEFAULT_OUTPUT = str(Path.cwd() / "out")
 
 
 def _load_version():
@@ -367,7 +367,8 @@ class ChronopolisApp:
 
     def _load_prefs(self):
         default = {"complete_flags": "", "complete_media": "", "tasks": {},
-                   "last_section": "complete", "last_task": TASKS[0]["key"]}
+                   "last_section": "complete", "last_task": TASKS[0]["key"],
+                   "rendered_once": False}
         try:
             with open(PREFS_PATH) as f:
                 data = json.load(f)
@@ -618,6 +619,17 @@ class ChronopolisApp:
         self.status.insert("end", text + "\n")
         self.status.see("end")
 
+    def _note_first_render(self):
+        """The first video render on a machine triggers a one-time Manim/Pango
+        font-cache build that can take a few minutes. Warn about it once so the
+        wait is expected; later renders are fast."""
+        if self.prefs.get("rendered_once"):
+            return
+        self._append("First video render on this machine: Manim is building its "
+                     "font cache - this can take a few minutes. Later renders are fast.")
+        self.prefs["rendered_once"] = True
+        self._save_prefs()
+
     def _run_task(self):
         if self._busy:
             return
@@ -638,6 +650,8 @@ class ChronopolisApp:
             "output": self.export_entry.value() if self.export_entry else "",
         }
         self._append(f"--- Running: {task['label']} ---")
+        if task["visualize"]:
+            self._note_first_render()
         self._start(lambda: task["run"](values, opts))
 
     def _run_complete(self):
@@ -662,6 +676,7 @@ class ChronopolisApp:
         open_video, test, hd, keep = ("-o" in flags, "-p" in flags,
                                       "-hd" in flags, "-k" in flags)
         self._append("--- Running: Complete Analysis ---")
+        self._note_first_render()
         self._start(lambda: core.complete_analysis(
             sp1, sp2, output_dir=output, open_video=open_video, test=test,
             hd=hd, keep=keep, harmonics=harmonics, name=name, log=self._post))

@@ -121,9 +121,9 @@ def task_sync(osc1_file, osc2_file, out_path):
 
 def _resolve_output_dir(output_dir):
     """The single folder all outputs go to (the final video and any function
-    files). Defaults to 'media'. Created if it does not exist yet."""
+    files). Defaults to 'out'. Created if it does not exist yet."""
     text = (output_dir or "").strip() if isinstance(output_dir, str) else str(output_dir or "")
-    target = Path(text) if text else Path("media")
+    target = Path(text) if text else Path("out")
     target.mkdir(parents=True, exist_ok=True)
     return target
 
