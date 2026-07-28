@@ -4,9 +4,16 @@
 #
 # Run it from inside the installed folder when the app misbehaves. Unlike the
 # installer (which creates the folder), this repairs the folder it lives in: it
-# checks the dependencies, restores any missing or changed files and updates to
-# the latest version (by calling update.sh), then rebuilds the virtual
-# environment and reinstalls the Python dependencies.
+# checks the dependencies, rebuilds the virtual environment, reinstalls the
+# Python dependencies, and then - as its very last action - hands off to
+# update.sh to restore any missing/changed files and update to the latest
+# version.
+#
+# update.sh is the TERMINAL step (via exec) on purpose: git's reset may rewrite
+# tracked files, including this script itself. By exec-ing update.sh we replace
+# this process, so fix-installation.sh has fully finished and its file can be
+# safely overwritten by the update. Everything this script needs to do runs
+# before that hand-off.
 #
 set -u
 cd "$(dirname "$0")" || exit 1
@@ -50,12 +57,7 @@ if "$PY" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 14) else 1)' 
 fi
 command -v ffmpeg >/dev/null 2>&1 || echo "Warning: ffmpeg not found - videos will not render until it is installed."
 
-# ---- 1. restore/verify files + update to latest (via update.sh) -------
-echo
-echo "Verifying files and updating ..."
-bash "$DIR/update.sh"
-
-# ---- 2. virtual environment -------------------------------------------
+# ---- 1. virtual environment -------------------------------------------
 echo
 if [ -x ".venv/bin/python" ]; then
     echo "Virtual environment present."
@@ -64,11 +66,19 @@ else
     "$PY" -m venv .venv || { echo "Could not create the virtual environment."; reinstall_hint; exit 1; }
 fi
 
-# ---- 3. dependencies --------------------------------------------------
+# ---- 2. dependencies --------------------------------------------------
 echo "Reinstalling dependencies (numpy, manim, tkinterdnd2) ..."
 .venv/bin/python -m pip install --upgrade pip >/dev/null 2>&1
 .venv/bin/python -m pip install numpy manim tkinterdnd2 || echo "Some dependencies failed to install."
 
+# ---- 3. restore/verify files + update (TERMINAL step) -----------------
+# This is the last thing we do. We reach it only after all of the above has
+# finished, then exec update.sh so this process is replaced - update's git
+# reset is then free to overwrite this very script. Launch the app afterward
+# with:  bash run.sh
 echo
-echo "Repair complete. Launch the app with:  bash $DIR/run.sh"
+echo "Dependencies ready."
 reinstall_hint
+echo
+echo "Final step: verifying and updating project files ..."
+exec bash "$DIR/update.sh"

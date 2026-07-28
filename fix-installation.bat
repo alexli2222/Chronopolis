@@ -4,9 +4,14 @@ REM fix-installation.bat - repair a Chronopolis installation IN PLACE.
 REM
 REM Run it from inside the installed folder when the app misbehaves. Unlike the
 REM installer (which creates the folder), this repairs the folder it lives in: it
-REM checks the dependencies, restores any missing or changed files and updates to
-REM the latest version (by calling update.bat), then rebuilds the virtual
-REM environment and reinstalls the Python dependencies.
+REM checks the dependencies, rebuilds the virtual environment, reinstalls the
+REM Python dependencies, and then - as its very last action - hands off to
+REM update.bat to restore any missing/changed files and update to the latest
+REM version.
+REM
+REM update.bat is the TERMINAL step on purpose: git's reset may rewrite tracked
+REM files. Everything this script needs to do runs before that hand-off, so once
+REM update.bat runs this script has finished its work.
 REM
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -47,12 +52,7 @@ if not errorlevel 1 (
 where ffmpeg >nul 2>&1
 if errorlevel 1 echo Warning: ffmpeg not found - videos will not render until it is installed.
 
-REM ---- 1. restore/verify files + update to latest (via update.bat) -------
-echo.
-echo Verifying files and updating ...
-call "update.bat"
-
-REM ---- 2. virtual environment -------------------------------------------
+REM ---- 1. virtual environment -------------------------------------------
 echo.
 if exist ".venv\Scripts\python.exe" (
     echo Virtual environment present.
@@ -65,25 +65,32 @@ if not exist ".venv\Scripts\python.exe" (
     goto reinstall_hint_exit
 )
 
-REM ---- 3. dependencies --------------------------------------------------
+REM ---- 2. dependencies --------------------------------------------------
 echo Reinstalling dependencies (numpy, manim, tkinterdnd2) ...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
 ".venv\Scripts\python.exe" -m pip install numpy manim tkinterdnd2
 if errorlevel 1 echo Some dependencies failed to install.
 
+REM ---- 3. restore/verify files + update (TERMINAL step) -----------------
+REM This is the last thing we do. We reach it only after all of the above has
+REM finished, then hand off to update.bat, so its git reset is free to refresh
+REM the tracked files. Launch the app afterward by double-clicking run.bat.
 echo.
-echo Repair complete. Launch the app by double-clicking run.bat.
+echo Dependencies ready.
+call :reinstall_hint
 echo.
-echo If Chronopolis still does not work, reinstall it from scratch:
-echo download the newest installer release from
-echo   %RELEASES%
-pause
+echo Final step: verifying and updating project files ...
+call "update.bat"
 exit /b 0
 
-:reinstall_hint_exit
+:reinstall_hint
 echo.
 echo If Chronopolis still does not work, reinstall it from scratch:
 echo download the newest installer release from
 echo   %RELEASES%
+goto :eof
+
+:reinstall_hint_exit
+call :reinstall_hint
 pause
 exit /b 1

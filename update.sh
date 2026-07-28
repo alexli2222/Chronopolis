@@ -9,7 +9,9 @@
 # untracked (git-ignored) and are left untouched.
 #
 # Called by run.sh (with --then-run, which launches the refreshed app afterward)
-# and by fix-installation.sh (without it, to just refresh the files).
+# and by fix-installation.sh as its terminal step (without the flag - it just
+# refreshes the files; fix-installation execs into this so its own script can be
+# safely overwritten by the reset).
 #
 cd "$(dirname "$0")" || exit 1
 DIR="$(pwd)"
